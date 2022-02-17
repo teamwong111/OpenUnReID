@@ -3,17 +3,15 @@
 import copy
 
 from ...utils import bcolors
-from .base_dataset import Dataset
+from .base_dataset import CustomDataset
 
 
-class JointDataset(Dataset):
+class JointDataset(CustomDataset):
     """
     Wrapper for concating different datasets
     """
 
-    def __init__(
-        self, datasets, verbose=True, **kwargs,
-    ):
+    def __init__(self, datasets, verbose=True, **kwargs):
         self.datasets = copy.deepcopy(datasets)
 
         # build joint label system
@@ -36,9 +34,9 @@ class JointDataset(Dataset):
         for data in self.data:
             joint_data.extend(data)
         self.num_pids, self.num_cams = self.parse_data(joint_data)
-
+        self.mode = None
         if verbose:
-            self.show_summary()
+            print(self.__repr__())
 
     def __len__(self):
         length = 0
@@ -55,18 +53,6 @@ class JointDataset(Dataset):
             dataset._get_single_item(index)
             for index, dataset in zip(indices, self.datasets)
         ]
-
-    def show_summary(self):
-        print(bcolors.BOLD + "=> Loaded the Joint Training Dataset" + bcolors.ENDC)
-        print("  ----------------------------")
-        print("  # ids | # images | # cameras")
-        print("  ----------------------------")
-        print(
-            "  {:5d} | {:8d} | {:9d}".format(
-                self.num_pids, self.__len__(), self.num_cams
-            )
-        )
-        print("  ----------------------------")
 
 
 class IterLoader:

@@ -6,10 +6,10 @@ import shutil
 import warnings
 from collections import defaultdict
 
-from ..utils.base_dataset import ImageDataset
+from ..utils.base_dataset import CustomDataset
 
 
-class VehicleID(ImageDataset):
+class VehicleID(CustomDataset):
     """
     VehicleID
     Reference:
@@ -35,7 +35,7 @@ class VehicleID(ImageDataset):
         self.root = osp.abspath(osp.expanduser(root))
         self.dataset_dir = osp.join(self.root, self.dataset_dir)
         self.del_labels = del_labels
-        self.download_dataset(self.dataset_dir, self.dataset_url)
+        self.download(self.dataset_dir, self.dataset_url)
         assert (val_split > 0.0) and (
             val_split < 1.0
         ), "the percentage of val_set should be within (0.0,1.0)"

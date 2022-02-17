@@ -5,10 +5,10 @@ import os.path as osp
 import re
 import warnings
 
-from ..utils.base_dataset import ImageDataset
+from ..utils.base_dataset import CustomDataset
 
 
-class PersonX(ImageDataset):
+class PersonX(CustomDataset):
     """PersonX
     Reference:
         Sun et al. Dissecting Person Re-identification from the Viewpoint of Viewpoint.
@@ -24,15 +24,12 @@ class PersonX(ImageDataset):
     dataset_url = (
         "https://drive.google.com/file/d/1hiHoDt3u7_GfeICMdEBt2Of8vXr1RF-U/view"
     )
-    dataset_url_gid = "1hiHoDt3u7_GfeICMdEBt2Of8vXr1RF-U"  # download from this gd ID
 
     def __init__(self, root, mode, val_split=0.2, del_labels=False, **kwargs):
         self.root = osp.abspath(osp.expanduser(root))
         self.dataset_dir = osp.join(self.root, self.dataset_dir)
         self.del_labels = del_labels
-        self.download_dataset(
-            self.dataset_dir, self.dataset_url, dataset_url_gid=self.dataset_url_gid
-        )
+        self.download(self.dataset_dir, self.dataset_url)
         assert (val_split > 0.0) and (
             val_split < 1.0
         ), "the percentage of val_set should be within (0.0,1.0)"

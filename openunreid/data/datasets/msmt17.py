@@ -3,10 +3,10 @@
 import os.path as osp
 import warnings
 
-from ..utils.base_dataset import ImageDataset
+from ..utils.base_dataset import CustomDataset
 
 
-class MSMT17(ImageDataset):
+class MSMT17(CustomDataset):
     """MSMT17.
 
     Reference:
@@ -28,7 +28,7 @@ class MSMT17(ImageDataset):
         self.root = osp.abspath(osp.expanduser(root))
         self.dataset_dir = osp.join(self.root, self.dataset_dir)
         self.del_labels = del_labels
-        self.download_dataset(self.dataset_dir, self.dataset_url)
+        self.download(self.dataset_dir, self.dataset_url)
 
         # allow alternative directory structure
         dataset_dir = osp.join(self.dataset_dir, "MSMT17_V1")

@@ -5,10 +5,10 @@ import os.path as osp
 import re
 import warnings
 
-from ..utils.base_dataset import ImageDataset
+from ..utils.base_dataset import CustomDataset
 
 
-class DukeMTMCreID(ImageDataset):
+class DukeMTMCreID(CustomDataset):
     """DukeMTMC-reID.
     Reference:
         - Ristani et al. Performance Measures and a Data Set for Multi-Target,
@@ -27,15 +27,12 @@ class DukeMTMCreID(ImageDataset):
     dataset_url = (
         "https://drive.google.com/file/d/1jjE85dRCMOgRtvJ5RQV9-Afs-2_5dY3O/view"
     )
-    dataset_url_gid = "1jjE85dRCMOgRtvJ5RQV9-Afs-2_5dY3O"  # download from this gd ID
 
     def __init__(self, root, mode, val_split=0.2, del_labels=False, **kwargs):
         self.root = osp.abspath(osp.expanduser(root))
         self.dataset_dir = osp.join(self.root, self.dataset_dir)
         self.del_labels = del_labels
-        self.download_dataset(
-            self.dataset_dir, self.dataset_url, dataset_url_gid=self.dataset_url_gid
-        )
+        self.download(self.dataset_dir, self.dataset_url)
         assert (val_split > 0.0) and (
             val_split < 1.0
         ), "the percentage of val_set should be within (0.0,1.0)"

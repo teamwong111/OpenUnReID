@@ -5,18 +5,13 @@ import copy
 import os.path as osp
 import tarfile
 import zipfile
-
-from ...utils import bcolors
-from ...utils.dist_utils import get_dist_info, synchronize
-from ...utils.file_utils import download_url, download_url_from_gd, mkdir_if_missing
+from torch.utils.data import Dataset
+from mmcv.runner import master_only
+from ...utils.file_utils import download_url, mkdir_if_missing
 from ..utils.data_utils import read_image
 
-
-class Dataset(object):
-    """An abstract class representing a Dataset.
-
-    This is the base class for ``ImageDataset``.
-
+class CustomDataset(Dataset):
+    """An abstract class representing a Dataset. All other image datasets should subclass it.
     Args:
         data (list): contains tuples of (img_path(s), pid, camid).
         mode (str): 'train', 'val', 'trainval', 'query' or 'gallery'.
@@ -24,30 +19,56 @@ class Dataset(object):
         verbose (bool): show information.
     """
 
-    def __init__(
-        self, data, mode, transform=None, verbose=True, sort=True, **kwargs,
-    ):
+    def __init__(self, data, mode, transform=None, verbose=True, sort=True, pseudo_labels=None, **kwargs):
         self.data = data
         self.transform = transform
         self.mode = mode
         self.verbose = verbose
-
         self.num_pids, self.num_cams = self.parse_data(self.data)
 
         if sort:
             self.data = sorted(self.data)
+        
+        # "all_data" stores the original data list
+        # "data" stores the pseudo-labeled data list
+        self.all_data = copy.deepcopy(self.data)
+
+        if pseudo_labels is not None:
+            self.renew_labels(pseudo_labels)
 
         if self.verbose:
-            self.show_summary()
+            print(self.__repr__()) 
 
-    def __getitem__(self, index):
-        raise NotImplementedError
+    def __getitem__(self, indices):
+        if isinstance(indices, (tuple, list)):
+            return [self._get_single_item(index) for index in indices]
+        return self._get_single_item(indices)
 
     def __len__(self):
         return len(self.data)
 
+    def __repr__(self):
+        msg = (
+            f"-----------------------------------------------------\n"
+            f"         dataset        | # ids | # items | # cameras\n"
+            f"-----------------------------------------------------\n"
+            f"{self.__class__.__name__ } - {self.mode if self.mode != None else 'Nomode'}"
+            f"    | {self.num_pids} | {self.__len__()} | {self.num_cams}\n"
+        )
+        return msg
+
     def __add__(self, other):
-        raise NotImplementedError
+        """
+        work for combining query and gallery into the test data loader
+        """
+        return CustomDataset(
+            self.data + other.data,
+            self.mode + "+" + other.mode,
+            pseudo_labels=None,
+            transform=self.transform,
+            verbose=False,
+            sort=False,
+        )
 
     def parse_data(self, data):
         """Parses data list and returns the number of person IDs
@@ -62,59 +83,6 @@ class Dataset(object):
             cams.add(camid)
         return len(pids), len(cams)
 
-    def show_summary(self):
-        """Shows dataset statistics."""
-        pass
-
-    def download_dataset(self, dataset_dir, dataset_url, dataset_url_gid=None):
-        """Downloads and extracts dataset.
-        Args:
-            dataset_dir (str): dataset directory.
-            dataset_url (str): url to download dataset.
-        """
-        if osp.exists(dataset_dir):
-            return
-
-        if dataset_url is None:
-            raise RuntimeError(
-                "{} dataset needs to be manually "
-                "prepared, please download this dataset "
-                "under the folder of {}".format(self.__class__.__name__, dataset_dir)
-            )
-
-        rank, _, _ = get_dist_info()
-
-        if rank == 0:
-
-            print('Creating directory "{}"'.format(dataset_dir))
-            mkdir_if_missing(dataset_dir)
-            fpath = osp.join(dataset_dir, osp.basename(dataset_url))
-
-            print(
-                'Downloading {} dataset to "{}"'.format(
-                    self.__class__.__name__, dataset_dir
-                )
-            )
-
-            if dataset_url_gid is not None:
-                download_url_from_gd(dataset_url_gid, fpath)
-            else:
-                download_url(dataset_url, fpath)
-
-            print('Extracting "{}"'.format(fpath))
-            try:
-                tar = tarfile.open(fpath)
-                tar.extractall(path=dataset_dir)
-                tar.close()
-            except Exception:
-                zip_ref = zipfile.ZipFile(fpath, "r")
-                zip_ref.extractall(dataset_dir)
-                zip_ref.close()
-
-            print("{} dataset is ready".format(self.__class__.__name__))
-
-        synchronize()
-
     def check_before_run(self, required_files):
         """Checks if required files exist before going deeper.
         Args:
@@ -127,51 +95,12 @@ class Dataset(object):
             if not osp.exists(fpath):
                 raise RuntimeError('"{}" is not found'.format(fpath))
 
-    def __repr__(self):
-        msg = (
-            "  -----------------------------------------------------\n"
-            "  dataset                 | # ids | # items | # cameras\n"
-            "  -----------------------------------------------------\n"
-            "  {:20s}    | {:5d} | {:7d} | {:9d}\n"
-            "  -----------------------------------------------------\n".format(
-                self.__class__.__name__ + "-" + self.mode,
-                self.num_pids,
-                len(self.data),
-                self.num_cams,
-            )
-        )
-
-        return msg
-
-
-class ImageDataset(Dataset):
-    """A base class representing ImageDataset.
-
-        All other image datasets should subclass it.
-        ``_get_single_item`` returns an image given index.
+    def _get_single_item(self, index):
+        r"""``_get_single_item`` returns an image given index.
         It will return (``img``, ``img_path``, ``pid``, ``camid``, ``index``)
         where ``img`` has shape (channel, height, width). As a result,
         data in each batch has shape (batch_size, channel, height, width).
-    """
-
-    def __init__(self, data, mode, pseudo_labels=None, **kwargs):
-        if "verbose" not in kwargs.keys():
-            kwargs["verbose"] = False if (pseudo_labels is not None) else True
-        super(ImageDataset, self).__init__(data, mode, **kwargs)
-
-        # "all_data" stores the original data list
-        # "data" stores the pseudo-labeled data list
-        self.all_data = copy.deepcopy(self.data)
-
-        if pseudo_labels is not None:
-            self.renew_labels(pseudo_labels)
-
-    def __getitem__(self, indices):
-        if isinstance(indices, (tuple, list)):
-            return [self._get_single_item(index) for index in indices]
-        return self._get_single_item(indices)
-
-    def _get_single_item(self, index):
+        """
         img_path, pid, camid = self.data[index]
         img = read_image(img_path)
         if self.transform is not None:
@@ -185,19 +114,6 @@ class ImageDataset(Dataset):
             "ind": index,
         }
 
-    def __add__(self, other):
-        """
-        work for combining query and gallery into the test data loader
-        """
-        return ImageDataset(
-            self.data + other.data,
-            self.mode + "+" + other.mode,
-            pseudo_labels=None,
-            transform=self.transform,
-            verbose=False,
-            sort=False,
-        )
-
     def renew_labels(self, pseudo_labels):
         assert isinstance(pseudo_labels, list)
         assert len(pseudo_labels) == len(
@@ -209,24 +125,39 @@ class ImageDataset(Dataset):
             if label != -1:
                 data.append((img_path, label, camid))
         self.data = data
-
         self.num_pids, self.num_cams = self.parse_data(self.data)
 
-        if self.verbose:
-            self.show_summary()
+    @master_only
+    def download(self, dataset_dir, dataset_url) -> None:
+        """Downloads and extracts dataset.
+        Args:
+            dataset_dir (str): dataset directory.
+            dataset_url (str): url to download dataset.
+        """
+        if osp.exists(dataset_dir):
+            return
 
-    def show_summary(self):
-        print(
-            bcolors.BOLD
-            + "=> Loaded {} from {}".format(self.mode, self.__class__.__name__)
-            + bcolors.ENDC
-        )
-        print("  ----------------------------")
-        print("  # ids | # images | # cameras")
-        print("  ----------------------------")
-        print(
-            "  {:5d} | {:8d} | {:9d}".format(
-                self.num_pids, len(self.data), self.num_cams
+        if dataset_url is None:
+            raise RuntimeError(
+                f"{self.__class__.__name__} dataset needs to be manually "
+                f"prepared, please download this dataset "
+                f"under the folder of {dataset_dir}"
             )
-        )
-        print("  ----------------------------")
+        
+        print(f"Creating directory {dataset_dir}")
+        mkdir_if_missing(dataset_dir)
+        fpath = osp.join(dataset_dir, osp.basename(dataset_url))
+        
+        print(f"Downloading {self.__class__.__name__} dataset to {dataset_dir}")
+        download_url(dataset_url, fpath)
+        
+        print(f"Extracting {fpath}")
+        try:
+            tar = tarfile.open(fpath)
+            tar.extractall(path=dataset_dir)
+            tar.close()
+        except Exception:
+            zip_ref = zipfile.ZipFile(fpath, "r")
+            zip_ref.extractall(dataset_dir)
+            zip_ref.close()
+        print(f"{self.__class__.__name__} dataset is ready")
